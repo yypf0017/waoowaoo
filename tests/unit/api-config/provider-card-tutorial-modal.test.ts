@@ -107,6 +107,20 @@ function createState(tutorial: ProviderTutorial): UseProviderCardStateResult {
   }
 }
 
+function ProviderCardShellWithBody(
+  props: Omit<React.ComponentProps<typeof ProviderCardShell>, 'children'>,
+): React.ReactElement {
+  const ProviderCardShellComponent =
+    ProviderCardShell as unknown as React.ComponentType<
+      React.PropsWithChildren<Omit<React.ComponentProps<typeof ProviderCardShell>, 'children'>>
+    >
+  return createElement(
+    ProviderCardShellComponent,
+    props,
+    createElement('div', null, 'provider-body'),
+  )
+}
+
 describe('ProviderCardShell tutorial modal', () => {
   afterEach(() => {
     vi.clearAllMocks()
@@ -145,7 +159,7 @@ describe('ProviderCardShell tutorial modal', () => {
 
     const html = renderToStaticMarkup(
       createElement(
-        ProviderCardShell,
+        ProviderCardShellWithBody,
         {
           provider: {
             id: 'ark',
@@ -156,7 +170,6 @@ describe('ProviderCardShell tutorial modal', () => {
           t,
           state,
         },
-        createElement('div', null, 'provider-body'),
       ),
     )
 

@@ -19,6 +19,7 @@ export default function Navbar() {
   const [checkMsg, setCheckMsg] = useState<string | null>(null)
   const [checkMsgFading, setCheckMsgFading] = useState(false)
   const [manualChecking, setManualChecking] = useState(false)
+  const downloadLogsHref = '/api/admin/download-logs'
 
   const handleCheckUpdate = async () => {
     setCheckMsg(null)
@@ -125,7 +126,7 @@ export default function Navbar() {
                   </Link>
                   <LanguageSwitcher />
                   <a
-                    href="/api/admin/download-logs"
+                    href={downloadLogsHref}
                     download
                     className="text-sm text-[var(--glass-text-secondary)] hover:text-[var(--glass-text-primary)] font-medium transition-colors flex items-center gap-1"
                     title={t('downloadLogs')}

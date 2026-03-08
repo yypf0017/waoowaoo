@@ -76,6 +76,17 @@ const prismaMock = vi.hoisted(() => ({
   userPreference: {
     findUnique: vi.fn(async () => ({ lipSyncModel: 'fal::lipsync-model' })),
   },
+  novelPromotionStoryboard: {
+    findUnique: vi.fn(async () => ({
+      id: 'storyboard-1',
+      episode: {
+        novelPromotionProject: {
+          projectId: 'project-1',
+        },
+      },
+    })),
+    update: vi.fn(async () => ({})),
+  },
   novelPromotionPanel: {
     findFirst: vi.fn(async () => ({ id: 'panel-1' })),
     findMany: vi.fn(async () => []),
@@ -84,6 +95,7 @@ const prismaMock = vi.hoisted(() => ({
       if (id === 'panel-src') {
         return {
           id,
+          storyboardId: 'storyboard-1',
           panelIndex: 1,
           shotType: 'wide',
           cameraMove: 'static',
@@ -98,6 +110,7 @@ const prismaMock = vi.hoisted(() => ({
       if (id === 'panel-ins') {
         return {
           id,
+          storyboardId: 'storyboard-1',
           panelIndex: 2,
           shotType: 'medium',
           cameraMove: 'push',
@@ -111,6 +124,7 @@ const prismaMock = vi.hoisted(() => ({
       }
       return {
         id,
+        storyboardId: 'storyboard-1',
         panelIndex: 0,
         shotType: 'medium',
         cameraMove: 'static',
@@ -124,6 +138,10 @@ const prismaMock = vi.hoisted(() => ({
     }),
     update: vi.fn(async () => ({})),
     create: vi.fn(async () => ({ id: 'panel-created', panelIndex: 3 })),
+    findUniqueOrThrow: vi.fn(),
+    delete: vi.fn(async () => ({})),
+    count: vi.fn(async () => 3),
+    updateMany: vi.fn(async () => ({ count: 0 })),
   },
   novelPromotionProject: {
     findUnique: vi.fn(async () => ({
@@ -153,14 +171,31 @@ const prismaMock = vi.hoisted(() => ({
     novelPromotionPanel: {
       findMany: (args: unknown) => Promise<Array<{ id: string; panelIndex: number }>>
       update: (args: unknown) => Promise<unknown>
-      create: (args: unknown) => Promise<{ id: string; panelIndex: number }>
+      create: (args: { data?: { id?: string; panelIndex?: number } }) => Promise<{ id: string; panelIndex: number }>
+      findFirst: (args: unknown) => Promise<{ panelIndex: number } | null>
+      delete: (args: unknown) => Promise<unknown>
+      count: (args: unknown) => Promise<number>
+      updateMany: (args: unknown) => Promise<{ count: number }>
+    }
+    novelPromotionStoryboard: {
+      update: (args: unknown) => Promise<unknown>
     }
   }) => Promise<unknown>) => {
     const tx = {
       novelPromotionPanel: {
         findMany: async () => [],
         update: async () => ({}),
-        create: async () => ({ id: 'panel-created', panelIndex: 3 }),
+        create: async (args: { data?: { id?: string; panelIndex?: number } }) => ({
+          id: args.data?.id || 'panel-created',
+          panelIndex: args.data?.panelIndex ?? 3,
+        }),
+        findFirst: async () => ({ panelIndex: 3 }),
+        delete: async () => ({}),
+        count: async () => 3,
+        updateMany: async () => ({ count: 0 }),
+      },
+      novelPromotionStoryboard: {
+        update: async () => ({}),
       },
     }
     return await fn(tx)
