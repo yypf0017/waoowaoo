@@ -57,6 +57,7 @@ export const TEMPLATE_PLACEHOLDER_ALLOWLIST = new Set([
   'prompt',
   'image',
   'images',
+  'response_format',
   'aspect_ratio',
   'duration',
   'resolution',

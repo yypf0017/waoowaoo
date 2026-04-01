@@ -427,6 +427,7 @@ export function buildTemplateVariables(input: {
   prompt: string
   image?: string
   images?: string[]
+  responseFormat?: string
   aspectRatio?: string
   duration?: number
   resolution?: string
@@ -439,6 +440,7 @@ export function buildTemplateVariables(input: {
     prompt: input.prompt,
     image: input.image || '',
     images: input.images || [],
+    response_format: input.responseFormat || 'url',
     aspect_ratio: input.aspectRatio || '',
     duration: input.duration ?? null,
     resolution: input.resolution || '',

@@ -1216,6 +1216,314 @@ describe('api specific - user api-config PUT provider uniqueness', () => {
       status: {
         path: '/videos/{{task_id}}',
       },
+      response: {
+        taskIdPath: '$.id',
+        statusPath: '$.status',
+        outputUrlPath: '$.video_url',
+      },
+    })
+    expect(savedModel?.compatMediaTemplateSource).toBe('manual')
+    expect(typeof savedModel?.compatMediaTemplateCheckedAt).toBe('string')
+  })
+
+  it('backfills godawnai-specific compatMediaTemplate for openai-compatible video model when missing', async () => {
+    installAuthMocks()
+    mockAuthenticated('user-1')
+    const route = await import('@/app/api/user/api-config/route')
+
+    const req = buildMockRequest({
+      path: '/api/user/api-config',
+      method: 'PUT',
+      body: {
+        providers: [
+          { id: 'openai-compatible:oa-1', name: 'GodawnAI Compat', baseUrl: 'https://dev-api.godawnai.com/v1', apiKey: 'oa-key' },
+        ],
+        models: [
+          {
+            modelId: 'wan2.6-i2v',
+            modelKey: 'openai-compatible:oa-1::wan2.6-i2v',
+            name: 'Wan 2.6 I2V',
+            type: 'video',
+            provider: 'openai-compatible:oa-1',
+          },
+        ],
+      },
+    })
+
+    const res = await route.PUT(req, routeContext)
+    expect(res.status).toBe(200)
+    const savedModels = readSavedModelsFromUpsert()
+    const savedModel = savedModels.find((item) => item.modelKey === 'openai-compatible:oa-1::wan2.6-i2v')
+    expect(savedModel?.compatMediaTemplate).toMatchObject({
+      version: 1,
+      mediaType: 'video',
+      mode: 'async',
+      create: {
+        path: '/videos',
+        contentType: 'application/json',
+        bodyTemplate: {
+          model: '{{model}}',
+          prompt: '{{prompt}}',
+          duration: '{{duration}}',
+          size: '{{size}}',
+          start_image: '{{image}}',
+        },
+      },
+      status: {
+        path: '/videos/{{task_id}}',
+      },
+      response: {
+        taskIdPath: '$.id',
+        statusPath: '$.status',
+        outputUrlPath: '$.video_url',
+      },
+      polling: {
+        doneStates: ['completed'],
+        failStates: ['failed'],
+      },
+    })
+    expect((savedModel?.compatMediaTemplate as { content?: unknown } | undefined)?.content).toBeUndefined()
+  })
+
+  it('keeps explicit compatMediaTemplate for godawnai video model without auto overriding', async () => {
+    installAuthMocks()
+    mockAuthenticated('user-1')
+    const route = await import('@/app/api/user/api-config/route')
+
+    const req = buildMockRequest({
+      path: '/api/user/api-config',
+      method: 'PUT',
+      body: {
+        providers: [
+          { id: 'openai-compatible:oa-1', name: 'GodawnAI Compat', baseUrl: 'https://dev-api.godawnai.com/v1', apiKey: 'oa-key' },
+        ],
+        models: [
+          {
+            modelId: 'wan2.6-i2v',
+            modelKey: 'openai-compatible:oa-1::wan2.6-i2v',
+            name: 'Wan 2.6 I2V',
+            type: 'video',
+            provider: 'openai-compatible:oa-1',
+            compatMediaTemplate: {
+              version: 1,
+              mediaType: 'video',
+              mode: 'async',
+              create: {
+                method: 'POST',
+                path: '/custom/videos/create',
+                contentType: 'application/json',
+                bodyTemplate: {
+                  model: '{{model}}',
+                  prompt: '{{prompt}}',
+                },
+              },
+              status: {
+                method: 'GET',
+                path: '/custom/videos/{{task_id}}',
+              },
+              response: {
+                taskIdPath: '$.task_id',
+                statusPath: '$.status',
+                outputUrlPath: '$.result_url',
+              },
+              polling: {
+                intervalMs: 3000,
+                timeoutMs: 180000,
+                doneStates: ['done'],
+                failStates: ['failed'],
+              },
+            },
+            compatMediaTemplateSource: 'ai',
+          },
+        ],
+      },
+    })
+
+    const res = await route.PUT(req, routeContext)
+    expect(res.status).toBe(200)
+    const savedModels = readSavedModelsFromUpsert()
+    const savedModel = savedModels.find((item) => item.modelKey === 'openai-compatible:oa-1::wan2.6-i2v')
+    expect(savedModel?.compatMediaTemplate).toMatchObject({
+      create: {
+        path: '/custom/videos/create',
+      },
+      response: {
+        outputUrlPath: '$.result_url',
+      },
+    })
+    expect(savedModel?.compatMediaTemplateSource).toBe('ai')
+  })
+
+  it('upgrades legacy default compatMediaTemplate to godawnai template when provider baseUrl matches', async () => {
+    installAuthMocks()
+    mockAuthenticated('user-1')
+    prismaMock.userPreference.findUnique.mockResolvedValue({
+      customProviders: JSON.stringify([
+        { id: 'openai-compatible:oa-1', name: 'GodawnAI Compat', baseUrl: 'https://dev-api.godawnai.com/v1', apiKey: 'enc:oa-key' },
+      ]),
+      customModels: JSON.stringify([
+        {
+          modelId: 'wan2.6-i2v',
+          modelKey: 'openai-compatible:oa-1::wan2.6-i2v',
+          name: 'Wan 2.6 I2V',
+          type: 'video',
+          provider: 'openai-compatible:oa-1',
+          price: 0,
+          compatMediaTemplate: {
+            version: 1,
+            mediaType: 'video',
+            mode: 'async',
+            create: {
+              method: 'POST',
+              path: '/videos',
+              contentType: 'multipart/form-data',
+              multipartFileFields: ['input_reference'],
+              bodyTemplate: {
+                model: '{{model}}',
+                prompt: '{{prompt}}',
+                seconds: '{{duration}}',
+                input_reference: '{{image}}',
+              },
+            },
+            status: {
+              method: 'GET',
+              path: '/videos/{{task_id}}',
+            },
+            content: {
+              method: 'GET',
+              path: '/videos/{{task_id}}/content',
+            },
+            response: {
+              taskIdPath: '$.id',
+              statusPath: '$.status',
+              errorPath: '$.error.message',
+            },
+            polling: {
+              intervalMs: 3000,
+              timeoutMs: 600000,
+              doneStates: ['completed', 'succeeded'],
+              failStates: ['failed', 'error', 'canceled'],
+            },
+          },
+          compatMediaTemplateSource: 'manual',
+        },
+      ]),
+    })
+    const route = await import('@/app/api/user/api-config/route')
+
+    const req = buildMockRequest({
+      path: '/api/user/api-config',
+      method: 'PUT',
+      body: {
+        models: [
+          {
+            modelId: 'wan2.6-i2v',
+            modelKey: 'openai-compatible:oa-1::wan2.6-i2v',
+            name: 'Wan 2.6 I2V',
+            type: 'video',
+            provider: 'openai-compatible:oa-1',
+          },
+        ],
+      },
+    })
+
+    const res = await route.PUT(req, routeContext)
+    expect(res.status).toBe(200)
+    const savedModels = readSavedModelsFromUpsert()
+    const savedModel = savedModels.find((item) => item.modelKey === 'openai-compatible:oa-1::wan2.6-i2v')
+    expect(savedModel?.compatMediaTemplate).toMatchObject({
+      create: {
+        contentType: 'application/json',
+        bodyTemplate: {
+          duration: '{{duration}}',
+          start_image: '{{image}}',
+        },
+      },
+      response: {
+        outputUrlPath: '$.video_url',
+      },
+    })
+    expect((savedModel?.compatMediaTemplate as { content?: unknown } | undefined)?.content).toBeUndefined()
+  })
+
+  it('does not upgrade legacy default compatMediaTemplate when provider is not godawnai', async () => {
+    installAuthMocks()
+    mockAuthenticated('user-1')
+    prismaMock.userPreference.findUnique.mockResolvedValue({
+      customProviders: JSON.stringify([
+        { id: 'openai-compatible:oa-1', name: 'Compat', baseUrl: 'https://compat.test/v1', apiKey: 'enc:oa-key' },
+      ]),
+      customModels: JSON.stringify([
+        {
+          modelId: 'veo-2',
+          modelKey: 'openai-compatible:oa-1::veo-2',
+          name: 'Veo 2',
+          type: 'video',
+          provider: 'openai-compatible:oa-1',
+          price: 0,
+          compatMediaTemplate: {
+            version: 1,
+            mediaType: 'video',
+            mode: 'async',
+            create: {
+              method: 'POST',
+              path: '/videos',
+              contentType: 'multipart/form-data',
+              multipartFileFields: ['input_reference'],
+              bodyTemplate: {
+                model: '{{model}}',
+                prompt: '{{prompt}}',
+                seconds: '{{duration}}',
+                input_reference: '{{image}}',
+              },
+            },
+            status: {
+              method: 'GET',
+              path: '/videos/{{task_id}}',
+            },
+            content: {
+              method: 'GET',
+              path: '/videos/{{task_id}}/content',
+            },
+            response: {
+              taskIdPath: '$.id',
+              statusPath: '$.status',
+              errorPath: '$.error.message',
+            },
+            polling: {
+              intervalMs: 3000,
+              timeoutMs: 600000,
+              doneStates: ['completed', 'succeeded'],
+              failStates: ['failed', 'error', 'canceled'],
+            },
+          },
+          compatMediaTemplateSource: 'manual',
+        },
+      ]),
+    })
+    const route = await import('@/app/api/user/api-config/route')
+
+    const req = buildMockRequest({
+      path: '/api/user/api-config',
+      method: 'PUT',
+      body: {
+        models: [
+          {
+            modelId: 'veo-2',
+            modelKey: 'openai-compatible:oa-1::veo-2',
+            name: 'Veo 2',
+            type: 'video',
+            provider: 'openai-compatible:oa-1',
+          },
+        ],
+      },
+    })
+
+    const res = await route.PUT(req, routeContext)
+    expect(res.status).toBe(200)
+    const savedModels = readSavedModelsFromUpsert()
+    const savedModel = savedModels.find((item) => item.modelKey === 'openai-compatible:oa-1::veo-2')
+    expect(savedModel?.compatMediaTemplate).toMatchObject({
       content: {
         path: '/videos/{{task_id}}/content',
       },
@@ -1224,8 +1532,7 @@ describe('api specific - user api-config PUT provider uniqueness', () => {
         statusPath: '$.status',
       },
     })
-    expect(savedModel?.compatMediaTemplateSource).toBe('manual')
-    expect(typeof savedModel?.compatMediaTemplateCheckedAt).toBe('string')
+    expect((savedModel?.compatMediaTemplate as { response?: { outputUrlPath?: unknown } } | undefined)?.response?.outputUrlPath).toBeUndefined()
   })
 
   it('keeps explicit compatMediaTemplate for openai-compatible video model', async () => {

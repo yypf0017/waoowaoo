@@ -1,4 +1,8 @@
 import type { GenerateResult } from '@/lib/generators/base'
+import type {
+  OpenAICompatMediaTemplate,
+  TemplateBodyValue,
+} from '@/lib/openai-compat-media-template'
 import type { OpenAICompatImageRequest } from '../types'
 import {
   buildRenderedTemplateRequest,
@@ -53,6 +57,30 @@ function readTemplateOutputUrls(value: unknown): string[] {
   return urls
 }
 
+function isTemplateObjectBody(value: TemplateBodyValue | undefined): value is Record<string, TemplateBodyValue> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function resolveImageCreateEndpoint(
+  endpoint: OpenAICompatMediaTemplate['create'],
+): OpenAICompatMediaTemplate['create'] {
+  const methodHasBody = endpoint.method === 'POST' || endpoint.method === 'PUT' || endpoint.method === 'PATCH'
+  if (!methodHasBody) return endpoint
+
+  const contentType = endpoint.contentType || 'application/json'
+  if (contentType !== 'application/json') return endpoint
+  if (!isTemplateObjectBody(endpoint.bodyTemplate)) return endpoint
+  if ('response_format' in endpoint.bodyTemplate) return endpoint
+
+  return {
+    ...endpoint,
+    bodyTemplate: {
+      ...endpoint.bodyTemplate,
+      response_format: '{{response_format}}',
+    },
+  }
+}
+
 export async function generateImageViaOpenAICompatTemplate(
   request: OpenAICompatImageRequest,
 ): Promise<GenerateResult> {
@@ -72,6 +100,7 @@ export async function generateImageViaOpenAICompatTemplate(
     prompt: request.prompt,
     image: firstReference,
     images: request.referenceImages || [],
+    responseFormat: typeof request.options?.responseFormat === 'string' ? request.options.responseFormat : undefined,
     aspectRatio: typeof request.options?.aspectRatio === 'string' ? request.options.aspectRatio : undefined,
     resolution: typeof request.options?.resolution === 'string' ? request.options.resolution : undefined,
     size: typeof request.options?.size === 'string' ? request.options.size : undefined,
@@ -80,7 +109,7 @@ export async function generateImageViaOpenAICompatTemplate(
 
   const createRequest = await buildRenderedTemplateRequest({
     baseUrl: config.baseUrl,
-    endpoint: request.template.create,
+    endpoint: resolveImageCreateEndpoint(request.template.create),
     variables,
     defaultAuthHeader: `Bearer ${config.apiKey}`,
   })

@@ -18,12 +18,13 @@ describe('openai-compat template image output urls', () => {
   })
 
   it('returns all image urls when outputUrlsPath contains multiple values', async () => {
-    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
       data: [
         { url: 'https://cdn.test/1.png' },
         { url: 'https://cdn.test/2.png' },
       ],
-    }), { status: 200 })) as unknown as typeof fetch
+    }), { status: 200 }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
 
     const result = await generateImageViaOpenAICompatTemplate({
       userId: 'user-1',
@@ -56,6 +57,15 @@ describe('openai-compat template image output urls', () => {
       success: true,
       imageUrl: 'https://cdn.test/1.png',
       imageUrls: ['https://cdn.test/1.png', 'https://cdn.test/2.png'],
+    })
+
+    const firstCall = fetchMock.mock.calls[0]
+    const requestInit = firstCall?.[1] as RequestInit | undefined
+    expect(typeof requestInit?.body).toBe('string')
+    expect(JSON.parse(requestInit?.body as string)).toMatchObject({
+      model: 'gpt-image-1',
+      prompt: 'draw a cat',
+      response_format: 'url',
     })
   })
 

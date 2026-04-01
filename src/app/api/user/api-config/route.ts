@@ -41,6 +41,12 @@ import type {
   OpenAICompatMediaTemplateSource,
 } from '@/lib/openai-compat-media-template'
 import { validateOpenAICompatMediaTemplate } from '@/lib/user-api/model-template/validator'
+import {
+  getDefaultOpenAICompatMediaTemplate,
+  getGodawnaiOpenAICompatVideoTemplate,
+  isGodawnaiBaseUrl,
+  isLegacyDefaultOpenAICompatVideoTemplate,
+} from '@/lib/user-api/model-template/defaults'
 
 type ApiModeType = 'gemini-sdk' | 'openai-official'
 type GatewayRouteType = 'official' | 'openai-compat'
@@ -975,68 +981,6 @@ function isOpenAICompatibleMediaTemplateModel(model: StoredModel): boolean {
   return model.type === 'image' || model.type === 'video'
 }
 
-function getDefaultMediaTemplate(type: 'image' | 'video'): OpenAICompatMediaTemplate {
-  if (type === 'image') {
-    return {
-      version: 1,
-      mediaType: 'image',
-      mode: 'sync',
-      create: {
-        method: 'POST',
-        path: '/images/generations',
-        contentType: 'application/json',
-        bodyTemplate: {
-          model: '{{model}}',
-          prompt: '{{prompt}}',
-        },
-      },
-      response: {
-        outputUrlPath: '$.data[0].url',
-        outputUrlsPath: '$.data',
-        errorPath: '$.error.message',
-      },
-    }
-  }
-
-  return {
-    version: 1,
-    mediaType: 'video',
-    mode: 'async',
-    create: {
-      method: 'POST',
-      path: '/videos',
-      contentType: 'multipart/form-data',
-      multipartFileFields: ['input_reference'],
-      bodyTemplate: {
-        model: '{{model}}',
-        prompt: '{{prompt}}',
-        seconds: '{{duration}}',
-        size: '{{size}}',
-        input_reference: '{{image}}',
-      },
-    },
-    status: {
-      method: 'GET',
-      path: '/videos/{{task_id}}',
-    },
-    content: {
-      method: 'GET',
-      path: '/videos/{{task_id}}/content',
-    },
-    response: {
-      taskIdPath: '$.id',
-      statusPath: '$.status',
-      errorPath: '$.error.message',
-    },
-    polling: {
-      intervalMs: 3000,
-      timeoutMs: 600000,
-      doneStates: ['completed', 'succeeded'],
-      failStates: ['failed', 'error', 'canceled'],
-    },
-  }
-}
-
 function resolveStoredLlmProtocols(
   models: StoredModel[],
   existingModels: StoredModel[],
@@ -1090,6 +1034,7 @@ function resolveStoredLlmProtocols(
 function resolveStoredMediaTemplates(
   models: StoredModel[],
   existingModels: StoredModel[],
+  providers: StoredProvider[],
 ): StoredModel[] {
   const existingByModelKey = new Map(existingModels.map((model) => [model.modelKey, model] as const))
   const checkedAtFallback = new Date().toISOString()
@@ -1108,6 +1053,10 @@ function resolveStoredMediaTemplates(
     }
 
     const expectedMediaType = model.type === 'image' ? 'image' : 'video'
+    const matchedProvider = resolveProviderByIdOrKey(providers, model.provider)
+    const providerBaseUrl = matchedProvider?.baseUrl
+    const isGodawnaiVideoModel = expectedMediaType === 'video' && isGodawnaiBaseUrl(providerBaseUrl)
+
     if (model.compatMediaTemplate) {
       if (model.compatMediaTemplate.mediaType !== expectedMediaType) {
         throw new ApiError('INVALID_PARAMS', {
@@ -1124,9 +1073,13 @@ function resolveStoredMediaTemplates(
 
     const existing = existingByModelKey.get(model.modelKey)
     if (existing?.compatMediaTemplate) {
+      const shouldUpgradeLegacyTemplate = isGodawnaiVideoModel
+        && isLegacyDefaultOpenAICompatVideoTemplate(existing.compatMediaTemplate)
       return {
         ...model,
-        compatMediaTemplate: existing.compatMediaTemplate,
+        compatMediaTemplate: shouldUpgradeLegacyTemplate
+          ? getGodawnaiOpenAICompatVideoTemplate()
+          : existing.compatMediaTemplate,
         compatMediaTemplateCheckedAt: existing.compatMediaTemplateCheckedAt || checkedAtFallback,
         compatMediaTemplateSource: existing.compatMediaTemplateSource || 'manual',
       }
@@ -1134,7 +1087,10 @@ function resolveStoredMediaTemplates(
 
     return {
       ...model,
-      compatMediaTemplate: getDefaultMediaTemplate(expectedMediaType),
+      compatMediaTemplate: getDefaultOpenAICompatMediaTemplate({
+        type: expectedMediaType,
+        providerBaseUrl,
+      }),
       compatMediaTemplateCheckedAt: checkedAtFallback,
       compatMediaTemplateSource: 'manual',
     }
@@ -1797,11 +1753,16 @@ export const PUT = apiHandler(async (request: NextRequest) => {
   })
   const existingProviders = parseStoredProviders(existingPref?.customProviders)
   const existingModels = parseStoredModels(existingPref?.customModels)
+  const providerSourceForTemplates = normalizedProviders ?? existingProviders
   const normalizedModels = normalizedModelsInput === undefined
     ? undefined
-    : resolveStoredMediaTemplates(resolveStoredLlmProtocols(normalizedModelsInput, existingModels), existingModels)
+    : resolveStoredMediaTemplates(
+      resolveStoredLlmProtocols(normalizedModelsInput, existingModels),
+      existingModels,
+      providerSourceForTemplates,
+    )
 
-  const providerSourceForValidation = normalizedProviders ?? existingProviders
+  const providerSourceForValidation = providerSourceForTemplates
   if (normalizedModels !== undefined) {
     validateModelProviderConsistency(normalizedModels, providerSourceForValidation)
     validateModelProviderTypeSupport(normalizedModels, providerSourceForValidation)
